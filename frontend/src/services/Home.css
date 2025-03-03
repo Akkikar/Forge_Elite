@@ -1,0 +1,23 @@
+/* Home Page Styling */
+.home-container {
+  height: 100vh;
+  background: url('../images/learning.jpg') no-repeat center center/cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+}
+
+/* Overlay for better readability */
+.overlay {
+  background: rgba(0, 0, 0, 0.5);
+  padding: 20px;
+  border-radius: 10px;
+}
+
+h1 {
+  color: white;
+  font-size: 32px;
+  font-weight: bold;
+}
