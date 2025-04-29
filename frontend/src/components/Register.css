@@ -1,0 +1,137 @@
+
+.register-container {
+  max-width: 420px;
+  margin: 60px auto;
+  padding: 32px;
+  background: rgba(222, 179, 179, 0.9);
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+  font-family: 'Segoe UI', sans-serif;
+  transition: transform 0.3s ease-in-out;
+}
+
+.register-container:hover {
+  transform: translateY(-5px);
+}
+
+h2 {
+  text-align: center;
+  color: #2c3e50;
+  font-size: 28px;
+  margin-bottom: 28px;
+  font-weight: bold;
+  animation: fadeInDown 0.6s ease-out;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Input fields styling */
+.input-field {
+  width: 100%;
+  padding: 14px 16px;
+  margin: 10px 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+  box-sizing: border-box;
+  background-color: #f9f9f9;
+  transition: all 0.3s ease;
+}
+
+.input-field:focus {
+  border-color: #007bff;
+  background-color: #fff;
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+  outline: none;
+}
+
+/* Submit button styling */
+.submit-btn {
+  width: 100%;
+  padding: 14px;
+  margin-top: 20px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #007bff, #00b4ff);
+  color: white;
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.submit-btn:hover:enabled {
+  background: linear-gradient(135deg, #0056b3, #0095cc);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.submit-btn:disabled {
+  background-color: #a6c8ff;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Error message styling */
+.error-message {
+  color: #e74c3c;
+  font-weight: 500;
+  font-size: 14px;
+  text-align: center;
+  margin-top: 10px;
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0% { transform: translateX(-5px); }
+  25% { transform: translateX(5px); }
+  50% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+  100% { transform: translateX(0); }
+}
+
+/* Link to switch between Register and Login pages */
+.switch-link {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 15px;
+  color: #444;
+}
+
+.login-link {
+  color: #007bff;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.3s ease;
+  font-weight: 500;
+}
+
+.login-link:hover {
+  color: #0056b3;
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 500px) {
+  .register-container {
+    padding: 20px;
+    margin: 40px 16px;
+  }
+
+  h2 {
+    font-size: 22px;
+  }
+
+  .input-field,
+  .submit-btn {
+    font-size: 15px;
+  }
+}
