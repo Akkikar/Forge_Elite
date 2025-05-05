@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt"); // For password hashing
 
 const UserSchema = new mongoose.Schema(
   {
@@ -10,12 +9,31 @@ const UserSchema = new mongoose.Schema(
     email: {
       type: String,
       unique: true,
-      required: true,
-      match: [/\S+@\S+\.\S+/, "Please provide a valid email address"],
+      required: true
     },
     password: {
       type: String,
       required: true,
+    },
+    verifyOtp:{
+      type:String,
+      default:''
+    },
+    verifyOtpExpireAt:{
+      type:Number,
+      default:0
+    },
+    isAccountVerified:{
+      type:Boolean,
+      default:false
+    },
+    resetOtp:{
+      type:String,
+      default:''
+    },
+    resetOtpExpireAt:{
+      type:Number,
+      default:0
     },
     testStatus: {
       passed: { type: Boolean, default: false },

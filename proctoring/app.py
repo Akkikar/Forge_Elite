@@ -8,14 +8,36 @@ import torch  # Load YOLOv5 model
 import face_recognition
 from flask_cors import cross_origin
 import PyPDF2
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
+import gridfs
+from ultralytics import YOLO
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000"])
+
+CORS(app, origins=["http://localhost:5173","http://localhost:5174"])
+
+client = MongoClient("mongodb://localhost:27017/")  # Update with your MongoDB URI if needed
+db = client.SampleDataBase  # Connect to your database
+fs = gridfs.GridFS(db)
+collection = db["Selfie"]
 
 # Load YOLOv5 model using PyTorch
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Load the small YOLOv5 model
+model = YOLO("yolov8n.pt")  
 model.conf = 0.4  # Confidence threshold
 
+prototxt_path = r"C:\Users\dilee\Forge_Elite\proctoring\models\MobileNetSSD_deploy.prototxt.txt"
+caffemodel_path = r"C:\Users\dilee\Forge_Elite\proctoring\models\MobileNetSSD_deploy.caffemodel"
+
+net = cv2.dnn.readNetFromCaffe(prototxt_path, caffemodel_path)
+
+
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+           "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+           "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+           "sofa", "train", "tvmonitor", "laptop", "cell phone", "tablet"]
+
+DEVICE_CLASSES = {"cell phone", "laptop", "tablet", "tv", "monitor"}
 
 CAPTURE_DIR = "captures"
 os.makedirs(CAPTURE_DIR, exist_ok=True)
@@ -24,14 +46,20 @@ os.makedirs(CAPTURE_DIR, exist_ok=True)
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
 @app.route("/proctor/upload", methods=["POST"])
+@cross_origin(["http://localhost:5173","http://localhost:5174"])
 def upload_image():
     try:
-        data = request.json['image']
+        # Decode base64 image
+        data = request.json.get('image', '')
+        if not data:
+            return jsonify({"error": "No image data received"}), 400
+
         encoded = data.split(",")[1]
         img_data = base64.b64decode(encoded)
         np_arr = np.frombuffer(img_data, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # Convert to grayscale for face detection
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
 
@@ -40,18 +68,22 @@ def upload_image():
         if len(faces) > 1:
             return jsonify({"warning": "Multiple faces detected. Please be alone in the frame."}), 200
 
-        # Optional: check brightness or blurriness
+        # Blurriness check using Laplacian
         laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        if laplacian_var < 80:  # Threshold for blur detection
+        if laplacian_var < 80:
             return jsonify({"warning": "Face is too blurry or low lighting. Try again."}), 200
 
-        # YOLOv5 device detection
-        results = model(img)
+        # --- YOLOv8 Object Detection ---
+        results = model(img)[0]  # Get the first result
         detected_devices = []
-        for *box, conf, cls in results.xywh[0]:
-            if conf > 0.4:
-                label = model.names[int(cls)]
-                if label in ["cell phone", "laptop", "tablet"]:
+
+        if results.boxes is not None:
+            for box in results.boxes:
+                cls_id = int(box.cls[0].item())
+                conf = float(box.conf[0].item())
+                label = model.names[cls_id]
+
+                if conf > 0.4 and label in ["cell phone", "laptop", "tablet"]:
                     detected_devices.append(label)
 
         if detected_devices:
@@ -61,53 +93,53 @@ def upload_image():
                 "action": "logout"
             }), 200
 
-        # ✅ Save face image for future verification
+        # Get user ID from token (for now assuming token itself is user_id)
         user_id = request.headers.get("Authorization", "").replace("Bearer ", "")
         if not user_id:
             return jsonify({"error": "User ID/token missing"}), 400
 
-        filename = f"{CAPTURE_DIR}/{user_id}_registered.jpg"
-        cv2.imwrite(filename, img)
+        # Save image to MongoDB using GridFS
+        img_binary = BytesIO(img_data)
+        fs.put(img_binary, filename=f"{user_id}_registered.jpg", user_id=user_id)
+
+        # Save selfie record in MongoDB (optional)
+        selfie = {
+            "user_id": user_id,
+            "image_id": f"{user_id}_registered.jpg",
+            "timestamp": datetime.utcnow()
+        }
+        db.Selfie.insert_one(selfie)
 
         return jsonify({"success": True, "status": "Valid face detected. No external devices found."}), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("Upload error:", str(e))
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
 @app.route("/proctor/detect-device", methods=["POST"])
 def detect_device():
     try:
+        # Get base64 image from frontend
         data = request.json['image']
         encoded = data.split(",")[1]
         img_data = base64.b64decode(encoded)
         np_arr = np.frombuffer(img_data, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        # Save input image for debugging
-        cv2.imwrite("input_image_debug.jpg", img)
+        # Run YOLOv8 inference
+        results = model(img)[0]  # Get first result from list
 
-        # Resize and normalize image
-        img_resized = cv2.resize(img, (640, 640))
-        img_resized = img_resized / 255.0  # Normalize
-
-        # Save resized image for debugging
-        cv2.imwrite("resized_image_debug.jpg", img_resized * 255)
-
-        # Perform YOLO object detection
-        results = model(img_resized)
-
-        # Log the detected objects for debugging
-        print("Detected objects:")
-        print(results.pandas().xyxy[0])  # Pandas DataFrame with detection results
-
-        # Extract detected classes and confidence scores
         detected_devices = []
-        detections = results.pandas().xyxy[0]  # Use pandas output
-        for _, row in detections.iterrows():
-            print(f"Detected: {row['name']} with confidence {row['confidence']}")  # Debugging log
-            if row['confidence'] > 0.2 and row['name'] in ["cell phone", "laptop", "tablet"]:  # Lower threshold for testing
-                detected_devices.append(row['name'])
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            label = model.names[cls_id]
+            confidence = float(box.conf[0])
+
+            print(f"Detected {label} with confidence {confidence:.2f}")
+
+            if label in DEVICE_CLASSES:
+                detected_devices.append(label)
 
         if detected_devices:
             return jsonify({
@@ -143,35 +175,38 @@ def tab_warning():
     return jsonify({"status": "Tab switch logged"}), 200
 
 @app.route('/compare-face', methods=['POST'])
-@cross_origin(origin='http://localhost:3000') 
 def compare_face():
     try:
         data = request.get_json()
         image_data = data.get('image')
         user_id = data.get('userId')
 
+        # Check if image data and user_id are provided
         if not image_data or not user_id:
             return jsonify({'match': False, 'error': 'Missing image or userId'}), 400
 
-        stored_path = f'faces/{user_id}.jpg'
-        if not os.path.exists(stored_path):
-            return jsonify({'match': False, 'error': 'Reference image not found'}), 404
+        # Retrieve the stored face encoding from the database
+        stored_data = collection.find_one({"user_id": user_id})
 
-        # Load and encode stored selfie
-        stored_image = face_recognition.load_image_file(stored_path)
-        stored_encodings = face_recognition.face_encodings(stored_image)
-        if not stored_encodings:
-            return jsonify({'match': False, 'error': 'No face in reference image'}), 400
+        # Check if the stored data exists
+        if not stored_data:
+            return jsonify({'match': False, 'error': 'Reference image not found in the database'}), 404
 
-        # Load and encode current image
+        # Extract the stored face encoding from the database
+        stored_encoding = np.frombuffer(base64.b64decode(stored_data["face_encoding"]), dtype=np.float64)
+
+        # Decode the current image from base64
         current_image = face_recognition.load_image_file(BytesIO(base64.b64decode(image_data.split(",")[1])))
         current_encodings = face_recognition.face_encodings(current_image)
+
+        # Check if there are any faces in the current image
         if not current_encodings:
             return jsonify({'match': False, 'error': 'No face in current image'}), 400
 
-        # Compare the faces
-        match = face_recognition.compare_faces([stored_encodings[0]], current_encodings[0])[0]
+        # Compare the faces from the stored image and current image
+        match = face_recognition.compare_faces([stored_encoding], current_encodings[0])[0]
 
+        # Return the result of the comparison
         return jsonify({'match': match}), 200
 
     except Exception as e:
@@ -197,7 +232,7 @@ ROLE_KEYWORDS = {
     ]
 }
 
-# Extra resume strength criteria (applies to all roles)
+
 COMMON_KEYWORDS = [
     "projects", "technical skills", "problem solving", "certifications", "achievements",
     "leadership", "team player", "collaboration", "project management", "communication", "github"

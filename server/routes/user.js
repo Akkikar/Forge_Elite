@@ -2,56 +2,68 @@ const express = require("express");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const Face = require("../models/Face");
-const UserAnswers = require("../models/UserAnswers");
+const Selfie = require("../models/Selfie");
 const authMiddleware = require("../utils/auth");
+
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
 
-router.post("/upload-face", async (req, res) => {
+router.get("/selfie-exists", authMiddleware, async (req, res) => {
   const token = req.headers.authorization?.split(" ")[1];
+
   if (!token) return res.status(401).json({ error: "No token" });
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded.id;
-    const { image } = req.body;
+    const email = decoded.email;
 
-    if (!image) {
-      return res.status(400).json({ error: "Image is required" });
+    // Check if selfie already exists for this user
+    const selfie = await Selfie.findOne({ user: userId });
+    if (selfie) {
+      return res.json({ exists: true });  // If selfie exists, return true
     }
 
-    const existing = await Face.findOne({ user: userId });
-    if (existing) {
-      existing.image = image;
-      await existing.save();
-    } else {
-      await Face.create({ user: userId, image });
-    }
+    // If no selfie, return false
+    res.json({ exists: false });
 
-    res.json({ success: true, message: "Selfie saved to DB." });
-  } catch (err) {
-    console.error("Upload face error:", err);
-    res.status(401).json({ error: "Invalid token" });
-  }
-});
-
-// 📷 Check if selfie exists
-router.get("/selfie-exists", async (req, res) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "No token" });
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.id;
-
-    const selfie = await Face.findOne({ user: userId });
-    res.json({ exists: !!selfie });
   } catch (err) {
     console.error("Selfie check error:", err);
     res.status(401).json({ error: "Invalid token" });
   }
+});
+
+router.post("/save-selfie", authMiddleware, async (req, res) => {
+  const { image } = req.body;
+  const email = req.user.email;
+
+  try {
+    await Selfie.findOneAndUpdate(
+      { email },
+      { image },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to save selfie." });
+  }
+});
+
+router.post("/verify-face", authMiddleware, async (req, res) => {
+  const { liveImage } = req.body; // current webcam image
+  const email = req.user.email;
+  const selfieRecord = await Selfie.findOne({ email });
+
+  if (!selfieRecord) return res.status(404).json({ error: "Selfie not found" });
+
+  const result = await axios.post("http://localhost:5000/proctor/verify", {
+    registeredImage: selfieRecord.image,
+    liveImage,
+  });
+
+  res.json(result.data);
 });
 
 router.get("/status", authMiddleware, async (req, res) => {
@@ -84,23 +96,29 @@ router.get("/status", authMiddleware, async (req, res) => {
 });
 
 
-// 🖼️ Get user's selfie image
-router.get("/get-selfie", async (req, res) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "No token" });
 
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.id;
+router.get("/data" , authMiddleware , async (req,res)=>{
+  try{
 
-    const selfie = await Face.findOne({ user: userId });
-    if (!selfie) return res.status(404).json({ error: "Selfie not found" });
+    const userId = req.user.id;
 
-    res.json({ image: selfie.image });
-  } catch (err) {
-    console.error("Get selfie error:", err);
-    res.status(401).json({ error: "Invalid token" });
+    const user = await User.findById(userId);
+
+    if(!user){
+      return res.json({success:false,message:"User not Found"});
+    }
+    res.json({
+      success:true,
+      userData:{
+        name:user.name,
+        isAccountVerified:user.isAccountVerified
+      }
+    });
   }
-});
+  catch(err){
+    res.json({success:false,message:err.message});
+  }
+
+})
 
 module.exports = router;
