@@ -25,3 +25,5 @@ dist-ssr
 
 # dependencies
 /node_modules
+
+*.env
